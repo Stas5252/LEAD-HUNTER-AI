@@ -37,7 +37,7 @@ BEGIN
   ELSE
    INSERT INTO visitor_sessions(user_id,stage,entrypoint) VALUES(actor,'CONSENT',coalesce(nullif(split_part(txt,' ',2),''),'web_general'))
    ON CONFLICT(user_id) DO UPDATE SET session_id=gen_random_uuid(),stage='CONSENT',entrypoint=EXCLUDED.entrypoint,request_text=NULL,consent_at=NULL,consent_version=NULL,expires_at=now()+interval '24 hours',updated_at=now() RETURNING * INTO sess;
-   answer:=E'Здравствуйте! Здесь можно оставить заявку Станиславу Бутову на сайт, маркетинг, CRM, продажи или ИИ-контент.\n\nДля обработки заявки и ответа Станислав получит её текст и выбранный вами контакт. Политика: https://stanislavweb.ru/privacy\n\nНажмите «Согласен», если согласны на такую обработку. Для выхода — «Отмена».';
+   answer:=E'Здравствуйте! Здесь можно оставить заявку Станиславу Бутову на сайт, маркетинг, CRM, продажи или ИИ-контент.\n\nДля обработки заявки и ответа Станислав получит её текст и выбранный вами контакт. Политика: https://stanislavweb.ru/privacy.html\n\nНажмите «Согласен», если согласны на такую обработку. Для выхода — «Отмена».';
   END IF;
  ELSIF sess.user_id IS NULL THEN RETURN '{"handled":false}';
  ELSIF txt IN ('/cancel','Отмена') THEN

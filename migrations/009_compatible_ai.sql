@@ -35,4 +35,3 @@ BEGIN
     'request_body',body||jsonb_build_object('model',cfg.model),
     'endpoint',CASE WHEN cfg.mock_mode THEN 'http://127.0.0.1:9099/responses' ELSE cfg.endpoint END);
 END $$;
-
