@@ -64,6 +64,9 @@ GitHub Pages сайта не поддерживает запуск текуще�
 
 ## 3. Доступы к соцсетям и сайту
 
+Пошаговое подключение Threads Search: [THREADS_CONNECT.md](THREADS_CONNECT.md).
+Read-only verifier: `scripts/connect_threads.py --check-search`.
+
 Скриншоты аккаунтов и публичные ссылки не дают OAuth-доступа. Сначала нужен
 подключённый Postiz instance с собственными integrations, затем проверка
 POSTIZ_API_URL / POSTIZ_API_KEY через защищённые настройки. Для Threads Search —
