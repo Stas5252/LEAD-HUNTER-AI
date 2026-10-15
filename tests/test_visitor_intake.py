@@ -57,8 +57,9 @@ class VisitorIntakeTests(unittest.TestCase):
   r,_=self.run_events(['/start web_ai','Согласен','Нужно видео','Отмена'],"SELECT jsonb_build_object('count',count(*)) FROM visitor_submissions WHERE user_id=:user;")
   self.assertEqual(r[3]['result']['visitor_stage'],'CANCELLED');self.assertEqual(r[4]['count'],0)
  def test_unrelated_chats_and_owner_are_not_reinterpreted(self):
+  admin=int(sql('SELECT admin_id FROM app_settings WHERE id=true;'))
   queries=['BEGIN;']
-  for chat,actor in [({'id':-100123,'type':'supergroup'},42),({'id':761405171,'type':'private'},761405171)]:
+  for chat,actor in [({'id':-100123,'type':'supergroup'},42),({'id':admin,'type':'private'},admin)]:
    u={'update_id':7_500_000_000_001,'message':{'chat':chat,'from':{'id':actor},'text':'/start'}}
    queries.append(f'SELECT visitor_update({literal(u)}::jsonb);')
   queries.append('ROLLBACK;');r=[json.loads(x) for x in sql('\n'.join(queries)).splitlines() if x.startswith('{')]
