@@ -1,0 +1,217 @@
+{
+  "id": "lh-telegram",
+  "name": "LEAD HUNTER · Telegram commands",
+  "active": false,
+  "nodes": [
+    {
+      "id": "aa5b15f9cce633d8cbca628b67800855",
+      "name": "Telegram update",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lh-telegram",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "509d6626432658283d9ecee097e62286",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "lh-webhook",
+          "name": "LEAD HUNTER local webhook"
+        }
+      }
+    },
+    {
+      "id": "534db7db3297b7d4fcf5eda54c0c9dec",
+      "name": "Owner context",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT $1::jsonb AS payload,admin_id,monitor_update($1::jsonb) AS monitoring,visitor_update($1::jsonb) AS visitor FROM app_settings WHERE id=true;",
+        "options": {
+          "queryReplacement": "={{ [JSON.stringify($json.body)] }}"
+        }
+      },
+      "position": [
+        240,
+        0
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "lh-postgres",
+          "name": "LEAD HUNTER PostgreSQL"
+        }
+      }
+    },
+    {
+      "id": "da56b90687511125c54b54a5e7fc9172",
+      "name": "Authorize and parse",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "parameters": {
+        "jsCode": "const telegram = (()=>{const module={exports:{}};\n'use strict';\nconst UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;\nfunction parseUpdate(update, adminId) {\n  const base={update_id: Number.isSafeInteger(update?.update_id) && update.update_id>=0 ? update.update_id : null,ignored:true};\n  const cb=update?.callback_query;\n  const message=cb?.message||update?.message;\n  const user=cb?.from||message?.from;\n  if(!base.update_id || !adminId || String(user?.id)!==String(adminId) ||\n     String(message?.chat?.id)!==String(adminId) || message?.chat?.type!=='private') return base;\n  const result={...base,ignored:false,user_id:user.id,chat_id:message.chat.id,chat_type:'private',callback_id:cb?.id||null};\n  if(cb) {\n    const parts=String(cb.data||'').split(':');\n    if(parts[0]==='f') return {...result,command:'find',args:parts[1]||'maps_demo'};\n    if(!UUID.test(parts[1]||'')) return {...result,command:'help'};\n    const command={a:'approve',r:'reject',d:'edit'}[parts[0]];\n    const version=Number(parts[2]);\n    if(!command || (command==='approve'&&(!Number.isInteger(version)||version<1))) return {...result,command:'help'};\n    return {...result,command,lead_id:parts[1],version:command==='approve'?version:null};\n  }\n  const text=String(message.text||'').trim();\n  if(text.length>3500) return {...result,command:'help'};\n  const match=/^\\/([a-z]+)(?:@[a-z0-9_]+)?(?:\\s+([\\s\\S]*))?$/i.exec(text);\n  if(!match) return {...result,command:'help'};\n  const cmd=match[1].toLowerCase(),args=(match[2]||'').trim();\n  if(['lead','draft','approve','reject'].includes(cmd)) {\n    const [leadId,...rest]=args.split(/\\s+/);\n    if(!UUID.test(leadId||'')) return {...result,command:'help'};\n    const version=rest[0]===undefined?null:Number(rest[0]);\n    if(cmd==='approve' && (!Number.isSafeInteger(version)||version<1)) return {...result,command:'help'};\n    return {...result,command:cmd,lead_id:leadId,version:cmd==='approve'?version:null,\n      draft:cmd==='draft'?rest.join(' '):null};\n  }\n  const allowed=['start','today','find','leads','sources','stats','budget','stop','resume','threads','instagram','videos','source','stage','followup','jobs','chats','content','publish','cancel','media'];\n  return {...result,command:allowed.includes(cmd)?cmd:'help',args};\n}\nmodule.exports={parseUpdate};\n\nreturn module.exports;})();\nconst input=$input.first().json;return [{json:{command:telegram.parseUpdate(input.payload,input.admin_id),visitor:input.visitor}}];"
+      },
+      "position": [
+        480,
+        0
+      ]
+    },
+    {
+      "id": "f3e884dca7b9ad9730db57dc5f0b91cd",
+      "name": "Apply command",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT CASE WHEN coalesce(($2::jsonb->>'handled')::boolean,false) THEN $2::jsonb->'result' ELSE handle_command($1::jsonb) END AS result;",
+        "options": {
+          "queryReplacement": "={{ [JSON.stringify($json.command),JSON.stringify($json.visitor||{})] }}"
+        }
+      },
+      "position": [
+        720,
+        0
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "lh-postgres",
+          "name": "LEAD HUNTER PostgreSQL"
+        }
+      }
+    },
+    {
+      "id": "8752ce6792f9c3bb3ceedce116daabec",
+      "name": "Format replies",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "parameters": {
+        "jsCode": "const cards = (()=>{const module={exports:{}};\n'use strict';\nconst escapeHtml = text => String(text ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\"/g, '&quot;');\nfunction renderCard(lead) {\n  const e = x => escapeHtml(String(x ?? '').slice(0, 500));\n  const text = [\n    lead.is_demo ? '🧪 <b>DEMO: вымышленный пример</b>' : '📋 <b>Лид — требуется проверка владельца</b>',\n    `Компания: <b>${e(lead.company_name)}</b>`,\n    `Город: ${e(lead.city)} · Ниша: ${e(lead.niche)}`,\n    `Оценка: ${e(lead.score_0_100)}/100 · ${e(lead.classification)} · ${e(lead.scoring_method)}`,\n    `Статус: ${e(lead.status)} · Сайт: ${e(lead.website_status)}`,\n    `Основание: ${e(lead.proof_quote)}`,\n    `Почему: ${e(lead.why_relevant)}`,\n    `Оффер: ${e(lead.offer_type)}`,\n    `Контакт: ${e(lead.public_contact || 'Не указан')}`,\n    `Черновик (v${e(lead.draft_version || 1)}): ${e(lead.draft_message)}`,\n    `ID: <code>${e(lead.lead_id || 'после сохранения')}</code>`,\n    'КП не отправлено. Одобрение относится к ручной отправке.',\n  ].join('\\n');\n  const rows = [];\n  if (lead.lead_id) rows.push([\n    { text: 'Одобрить', callback_data: `a:${lead.lead_id}:${lead.draft_version || 1}` },\n    { text: 'Не беспокоить', callback_data: `r:${lead.lead_id}` },\n  ], [{ text: 'Изменить черновик', callback_data: `d:${lead.lead_id}` }]);\n  if (lead.source_url) rows.push([{ text: 'Открыть источник', url: lead.source_url }]);\n  return { text, parse_mode: 'HTML', disable_web_page_preview: true, reply_markup: { inline_keyboard: rows } };\n}\nmodule.exports = { renderCard, escapeHtml };\n\nreturn module.exports;})();\n\nconst r=$input.first().json.result;\nconst messages=r.ignored?[]:[...(r.text?[{text:cards.escapeHtml(r.text),parse_mode:'HTML',...(r.reply_markup?{reply_markup:r.reply_markup}:{})}]:[]),...(r.leads||[]).map(cards.renderCard)];\nif(!r.ignored&&r.callback_id)messages.unshift({_method:'answerCallbackQuery',callback_query_id:r.callback_id,text:'Принято'});\nreturn [{json:{update_id:r.update_id||null,messages,callback_id:r.callback_id||null}}];"
+      },
+      "position": [
+        960,
+        0
+      ]
+    },
+    {
+      "id": "f78ddee4afff7bf71c7d3f00d5f7afef",
+      "name": "Queue command replies",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT queue_replies($1::bigint,$2::jsonb)||jsonb_build_object('callback_id',$3::text) AS result;",
+        "options": {
+          "queryReplacement": "={{ [$json.update_id,JSON.stringify($json.messages),$json.callback_id] }}"
+        }
+      },
+      "position": [
+        1200,
+        0
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "lh-postgres",
+          "name": "LEAD HUNTER PostgreSQL"
+        }
+      }
+    },
+    {
+      "id": "d30d1f9b4da861a246041d300e1599ad",
+      "name": "Command accepted",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.result }}",
+        "options": {}
+      },
+      "position": [
+        1440,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Telegram update": {
+      "main": [
+        [
+          {
+            "node": "Owner context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Owner context": {
+      "main": [
+        [
+          {
+            "node": "Authorize and parse",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Authorize and parse": {
+      "main": [
+        [
+          {
+            "node": "Apply command",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Apply command": {
+      "main": [
+        [
+          {
+            "node": "Format replies",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format replies": {
+      "main": [
+        [
+          {
+            "node": "Queue command replies",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Queue command replies": {
+      "main": [
+        [
+          {
+            "node": "Command accepted",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "all",
+    "executionTimeout": 120
+  },
+  "pinData": {},
+  "versionId": "509d6626432658283d9ecee097e62286"
+}

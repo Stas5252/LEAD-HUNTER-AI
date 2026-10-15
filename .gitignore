@@ -1,0 +1,15 @@
+.env
+.env.*
+!.env.example
+.local/
+.superpowers/
+backups/
+node_modules/
+__pycache__/
+*.pyc
+*.log
+
+.venv/
+media/
+
+.venv

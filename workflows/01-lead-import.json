@@ -1,0 +1,300 @@
+{
+  "id": "lh-lead-import",
+  "name": "LEAD HUNTER · DEMO / import",
+  "active": false,
+  "nodes": [
+    {
+      "id": "b0b9fe24ffa9629125bdc59b122f80d6",
+      "name": "Manual",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "parameters": {},
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "3c14fb8a28813883d919fca5e56e69c8",
+      "name": "Every minute",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 1
+            }
+          ]
+        }
+      },
+      "position": [
+        0,
+        180
+      ]
+    },
+    {
+      "id": "91950db0a3ca27bd4d9d045f51118d4a",
+      "name": "Load request",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM claim_import(NULL);",
+        "options": {
+          "queryReplacement": ""
+        }
+      },
+      "position": [
+        240,
+        0
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "lh-postgres",
+          "name": "LEAD HUNTER PostgreSQL"
+        }
+      }
+    },
+    {
+      "id": "1f8aed91a097efb3b03278ff0b792d5f",
+      "name": "Load queued request",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM claim_import(NULL);",
+        "options": {
+          "queryReplacement": ""
+        }
+      },
+      "position": [
+        240,
+        180
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "lh-postgres",
+          "name": "LEAD HUNTER PostgreSQL"
+        }
+      }
+    },
+    {
+      "id": "73df0b6b5fc9eef9503b2462797acf36",
+      "name": "Normalize and score",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "parameters": {
+        "jsCode": "const leads = (()=>{const module={exports:{}};\n'use strict';\nconst { createHash } = require('crypto');\nconst { URL } = require('url');\nconst hash = text => createHash('sha256').update(text).digest('hex');\nconst SOCIAL = new Set(['vk.com', 't.me', 'instagram.com', 'threads.net', 'threads.com', 'facebook.com']);\nconst socialRoot = host => [...SOCIAL].find(root=>host===root||host.endsWith('.'+root));\n\nfunction clean(value, max = 500, required = false) {\n  if (value === undefined || value === null) value = '';\n  if (typeof value !== 'string' || value.length > max) throw new Error('Неверный тип или длина поля');\n  value = value.normalize('NFKC').trim();\n  if (required && !value) throw new Error('Обязательное поле отсутствует');\n  return value;\n}\n\nfunction canonicalUrl(value) {\n  if (!value) return null;\n  const url = new URL(clean(value, 2000));\n  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new Error('Нужен HTTP(S) URL без credentials');\n  url.hostname = url.hostname.toLowerCase().replace(/^www\\./, '');\n  url.hash = '';\n  for (const key of [...url.searchParams.keys()]) {\n    if (/^(utm_|fbclid$|gclid$)/i.test(key)) url.searchParams.delete(key);\n  }\n  url.searchParams.sort();\n  return url.toString().replace(/\\/$/, '');\n}\n\nfunction normalizeLead(raw) {\n  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('Лид должен быть объектом');\n  if (raw.is_demo !== undefined && typeof raw.is_demo !== 'boolean') throw new Error('is_demo должен быть boolean');\n  const company = clean(raw.company_name, 200, true);\n  const city = clean(raw.city, 100);\n  const text = clean(raw.text ?? raw.proof_quote, 20000, true);\n  const source = clean(raw.source, 100, true);\n  const sourceType = clean(raw.source_type || 'manual', 50);\n  const sourceUrl = canonicalUrl(clean(raw.source_url, 2000, true));\n  const website = canonicalUrl(raw.website);\n  const niche = clean(raw.niche, 100);\n  const externalId = clean(raw.external_id, 200);\n  let identity,identityReview=false;\n  const sourceParsed=new URL(sourceUrl);\n  const sourceIsPost=(socialRoot(sourceParsed.hostname)==='t.me'&&/^\\/[^/]+\\/\\d+$/.test(sourceParsed.pathname))||\n    /\\/(request|post)\\/[^/]+/.test(sourceParsed.pathname)||/\\/wall-?\\d+_\\d+/.test(sourceParsed.pathname);\n  if (externalId) identity = 'external:' + source + ':' + externalId;\n  else if(sourceIsPost) identity='post:'+sourceUrl;\n  else if(website) {\n    const parsed=new URL(website),social=socialRoot(parsed.hostname);\n    if(social) { parsed.hostname=social;identity='profile:'+parsed.toString(); }\n    else identity='domain:'+parsed.hostname;\n  } else {\n    identity='company:'+JSON.stringify([source,company.toLowerCase().replace(/\\s+/g,' '),city.toLowerCase()]);\n    identityReview=true;\n  }\n  let contact = clean(raw.public_contact, 300);\n  const digits = contact.replace(/\\D/g, '');\n  if (/^[+\\d\\s().-]+$/.test(contact) && digits.length === 11 && /^[78]/.test(digits)) contact = '+7' + digits.slice(1);\n  const published = raw.published_at ? new Date(raw.published_at) : null;\n  if (published && Number.isNaN(published.getTime())) throw new Error('Неверная дата источника');\n  const evidence = raw.website_evidence && typeof raw.website_evidence === 'object' ? raw.website_evidence : null;\n  const verifiedAbsence = !website && raw.website_status === 'ABSENT_CONFIRMED' && evidence?.method === 'manual' &&\n    evidence?.checked_at && Number.isFinite(Date.parse(evidence.checked_at)) && canonicalUrl(evidence?.source_url);\n  const contactSource=contact ? canonicalUrl(raw.contact_source_url || sourceUrl) : null;\n  return {\n    source, source_type: sourceType, source_url: sourceUrl, company_name: company, niche, city,\n    website, website_status: verifiedAbsence ? 'ABSENT_CONFIRMED' : website ? 'UNVERIFIED' : 'UNKNOWN',\n    public_contact: contact || null,\n    contact_source_url: contactSource,\n    proof_quote: text, text, published_at: published?.toISOString() || null,\n    is_demo: raw.is_demo === true, dedupe_key: hash((raw.is_demo===true?'demo:':'real:')+identity),identity_review:identityReview,\n    content_hash: hash(JSON.stringify([company, city, niche, text, website, verifiedAbsence ? evidence : null,\n      published?.toISOString()||null,contact,contactSource,sourceUrl])),\n    attribution: { ...(raw.attribution && typeof raw.attribution==='object' && !Array.isArray(raw.attribution) ? raw.attribution : {}), source_url: sourceUrl, published_at: published?.toISOString() || null },\n    tags: raw.is_demo === true ? ['DEMO'] : [],\n  };\n}\n\nfunction chooseOffer(niche) {\n  if (/директ|таргет|маркетинг|авито|продвижени|рекламн.{0,15}(кабинет|кампан)/i.test(niche)) return 'Маркетинг: Директ, VK, Авито и продвижение на картах';\n  if (/crm|срм/i.test(niche)) return 'Внедрение CRM и автоматизация процессов';\n  if (/звонк|лидогенерац/i.test(niche)) return 'Лидогенерация на звонках под согласованный сценарий';\n  if (/отдел.{0,10}продаж|обучени.{0,10}продаж/i.test(niche)) return 'Построение отдела продаж и обучение продажам';\n  if (/ии|фильм|мультфильм|ролик|фото|коммерческ.{0,10}видео/i.test(niche)) return 'ИИ-контент: фильмы, мультфильмы, реклама, фото и видео';\n  if (/мебел|кухн/i.test(niche)) return 'Каталог мебели с заявками';\n  if (/ресторан|доставк|кафе/i.test(niche)) return 'Онлайн-меню и оформление заказов';\n  if (/отел|гостиниц/i.test(niche)) return 'Каталог номеров и заявки на бронь';\n  if (/стомат|салон/i.test(niche)) return 'Услуги и онлайн-запись';\n  if (/ремонт/i.test(niche)) return 'Калькулятор и приём заявок';\n  if (/бот|автоматизац/i.test(niche)) return 'Telegram-бот и автоматизация заявок';\n  return 'Сайт или автоматизация под подтверждённую задачу';\n}\n\nfunction scoreLead(lead, { now = new Date().toISOString() } = {}) {\n  const t = lead.text.toLowerCase();\n  let classification = 'IRRELEVANT', score = 20, confidence = 0.45;\n  let why = 'Подтверждённого запроса нет; нужна ручная проверка.';\n  const age = lead.published_at ? Date.parse(now) - Date.parse(lead.published_at) : Infinity;\n  if (lead.source==='telegram_inbound' && lead.source_type==='website_forms' && lead.attribution?.intake==='telegram_inbound' && lead.attribution?.consent===true) {\n    classification='DIRECT_REQUEST';score=95;confidence=0.9;\n    why='Посетитель сам отправил задачу и контакт после явного согласия в боте.';\n  } else if (/казино|без вложений|гарантированн.{0,10}доход|в штат|полная занятость/.test(t)) {\n    why = 'Спам или вакансия в штат; не подтверждён запрос на подряд.';\n    score = 5; confidence = 0.9;\n  } else if (/делаю сайты|создаю сайты|разрабатываю сайты|заказывайте у меня|предлагаю.{0,25}(разработк|сайт|бот)/.test(t)) {\n    classification = 'COMPETITOR'; score = 10; confidence = 0.9;\n    why = 'Текст предлагает услуги исполнителя, а не ищет подрядчика.';\n  } else if (/(нуж[её]н|нужна|нужно|ищ[уе]м|ищу|кто сделает).{0,60}(сайт|лендинг|магазин|разработчик|бот|автоматизац|видео|директ|таргет|маркетинг|авито|crm|срм|лидогенерац|звонк|отдел.{0,10}продаж|обучени.{0,10}продаж|ии|фильм|мультфильм|ролик|фото)/.test(t)) {\n    classification = 'DIRECT_REQUEST'; score = age >= 0 && age <= 7 * 86400000 ? 95 : 80; confidence = 0.88;\n    why = score >= 90 ? 'Прямой свежий запрос в тексте источника.' : 'Прямой запрос; свежесть нужно проверить.';\n  } else if (/ищ[уе]м.{0,30}партн[её]р|субподряд|реферальн/.test(t)) {\n    classification = 'PARTNER'; score = 65; confidence = 0.7; why = 'Есть сигнал о партнёрстве или субподряде.';\n  } else if (lead.website_status === 'ABSENT_CONFIRMED') {\n    classification = 'LIKELY_NEED'; score = 72; confidence = 0.6;\n    why = 'Приложено подтверждение ручной проверки сайта; потребность ещё не подтверждена клиентом.';\n  }\n  const offer = chooseOffer(lead.niche + \" \" + lead.text);\n  const draft = `Здравствуйте! В вашем сообщении: «${lead.proof_quote.slice(0,300)}». Могу обсудить решение: ${offer.toLowerCase()}. Подскажите, задача ещё актуальна?`;\n  return { ...lead, classification, score_0_100: score, confidence_0_1: confidence,\n    why_relevant: why, need_detected: classification === 'DIRECT_REQUEST' ? lead.proof_quote.slice(0,500) : '',\n    offer_type: offer, draft_message: draft, scoring_method: 'heuristic',\n    score_0_100:lead.identity_review?Math.min(score,69):score,\n    status: score < 40 || lead.identity_review ? 'REVIEW' : 'NEW', next_action: 'Проверить источник и актуальность', estimated_cost: 0 };\n}\n\nmodule.exports = { normalizeLead, scoreLead, canonicalUrl, chooseOffer };\n\nreturn module.exports;})();\n\nconst input=$input.first().json;\nif(!Array.isArray(input.payload)||input.payload.length>input.max_leads) throw new Error('Неверный ввод или превышен MAX_LEADS_PER_RUN');\nconst batch=input.payload.map(raw=>leads.scoreLead(leads.normalizeLead(raw)));\nif(!batch.length)throw new Error('Пустая выборка: уточните фильтры');\nreturn batch.map(lead=>({json:{request_id:input.request_id,lead}}));"
+      },
+      "position": [
+        480,
+        0
+      ]
+    },
+    {
+      "id": "02790913a8e39847a459bc19dfa970e4",
+      "name": "Optional AI score",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "value": "lh-openai-score",
+          "mode": "id"
+        },
+        "mode": "each",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "position": [
+        600,
+        0
+      ]
+    },
+    {
+      "id": "82b21af7dbcbe35a0428f4732f8bc580",
+      "name": "Collect batch",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "parameters": {
+        "jsCode": "const items=$input.all();return [{json:{request_id:items[0].json.request_id,batch:items.map(i=>i.json.lead)}}];"
+      },
+      "position": [
+        660,
+        0
+      ]
+    },
+    {
+      "id": "6a1d77d9f4295286503bdf1f28356682",
+      "name": "Store leads",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT complete_import($1::uuid,$2::jsonb) AS result;",
+        "options": {
+          "queryReplacement": "={{ [$json.request_id,JSON.stringify($json.batch)] }}"
+        }
+      },
+      "position": [
+        720,
+        0
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "lh-postgres",
+          "name": "LEAD HUNTER PostgreSQL"
+        }
+      }
+    },
+    {
+      "id": "a52fcbbc33644d315e787216b2237fa2",
+      "name": "Cards",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "parameters": {
+        "jsCode": "const cards = (()=>{const module={exports:{}};\n'use strict';\nconst escapeHtml = text => String(text ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\"/g, '&quot;');\nfunction renderCard(lead) {\n  const e = x => escapeHtml(String(x ?? '').slice(0, 500));\n  const text = [\n    lead.is_demo ? '🧪 <b>DEMO: вымышленный пример</b>' : '📋 <b>Лид — требуется проверка владельца</b>',\n    `Компания: <b>${e(lead.company_name)}</b>`,\n    `Город: ${e(lead.city)} · Ниша: ${e(lead.niche)}`,\n    `Оценка: ${e(lead.score_0_100)}/100 · ${e(lead.classification)} · ${e(lead.scoring_method)}`,\n    `Статус: ${e(lead.status)} · Сайт: ${e(lead.website_status)}`,\n    `Основание: ${e(lead.proof_quote)}`,\n    `Почему: ${e(lead.why_relevant)}`,\n    `Оффер: ${e(lead.offer_type)}`,\n    `Контакт: ${e(lead.public_contact || 'Не указан')}`,\n    `Черновик (v${e(lead.draft_version || 1)}): ${e(lead.draft_message)}`,\n    `ID: <code>${e(lead.lead_id || 'после сохранения')}</code>`,\n    'КП не отправлено. Одобрение относится к ручной отправке.',\n  ].join('\\n');\n  const rows = [];\n  if (lead.lead_id) rows.push([\n    { text: 'Одобрить', callback_data: `a:${lead.lead_id}:${lead.draft_version || 1}` },\n    { text: 'Не беспокоить', callback_data: `r:${lead.lead_id}` },\n  ], [{ text: 'Изменить черновик', callback_data: `d:${lead.lead_id}` }]);\n  if (lead.source_url) rows.push([{ text: 'Открыть источник', url: lead.source_url }]);\n  return { text, parse_mode: 'HTML', disable_web_page_preview: true, reply_markup: { inline_keyboard: rows } };\n}\nmodule.exports = { renderCard, escapeHtml };\n\nreturn module.exports;})();\n\nconst result=$input.first().json.result;\nreturn [{json:{...result,cards:result.leads.map(cards.renderCard)}}];"
+      },
+      "position": [
+        960,
+        0
+      ]
+    },
+    {
+      "id": "a6fdf772dafa37e394d82407a6da4a59",
+      "name": "Save result",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE import_requests SET result=$2::jsonb,state='DONE',updated_at=now() WHERE request_id=$1::uuid AND state='STORED' RETURNING result;",
+        "options": {
+          "queryReplacement": "={{ [$json.request_id,JSON.stringify($json)] }}"
+        }
+      },
+      "position": [
+        1200,
+        0
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "lh-postgres",
+          "name": "LEAD HUNTER PostgreSQL"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Manual": {
+      "main": [
+        [
+          {
+            "node": "Load request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Every minute": {
+      "main": [
+        [
+          {
+            "node": "Load queued request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load request": {
+      "main": [
+        [
+          {
+            "node": "Normalize and score",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load queued request": {
+      "main": [
+        [
+          {
+            "node": "Normalize and score",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize and score": {
+      "main": [
+        [
+          {
+            "node": "Optional AI score",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Optional AI score": {
+      "main": [
+        [
+          {
+            "node": "Collect batch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Collect batch": {
+      "main": [
+        [
+          {
+            "node": "Store leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Store leads": {
+      "main": [
+        [
+          {
+            "node": "Cards",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cards": {
+      "main": [
+        [
+          {
+            "node": "Save result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "all",
+    "executionTimeout": 1800
+  },
+  "pinData": {},
+  "versionId": "8758bedaf537cf26b8003b5a453eed25"
+}

@@ -1,0 +1,20 @@
+[
+  {
+    "external_id":"demo-furniture-1","company_name":"DEMO: мебельный салон N (вымышленный)",
+    "source":"demo_fixture","source_type":"maps_demo","source_url":"https://example.invalid/demo/furniture-1",
+    "city":"Самара","niche":"мебель","website":"","public_contact":"",
+    "text":"Ищем разработчика: нужен интернет-магазин с каталогом мебели. Есть фото и список товаров.",
+    "published_at":"2026-10-15T06:00:00Z","is_demo":true
+  },
+  {
+    "external_id":"demo-cafe-2","company_name":"DEMO: кафе N (вымышленное)",
+    "source":"demo_fixture","source_type":"maps_demo","source_url":"https://example.invalid/demo/cafe-2",
+    "city":"Казань","niche":"ресторан","text":"Нужен сайт с меню и заказом доставки для нашего кафе.",
+    "published_at":"2026-10-15T07:00:00Z","is_demo":true
+  },
+  {
+    "external_id":"demo-developer-3","company_name":"DEMO: исполнитель N (вымышленный)",
+    "source":"demo_fixture","source_type":"maps_demo","source_url":"https://example.invalid/demo/developer-3",
+    "city":"Москва","niche":"разработка","text":"Делаю сайты и ботов. Заказывайте у меня!","is_demo":true
+  }
+]

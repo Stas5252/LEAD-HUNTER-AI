@@ -1,0 +1,101 @@
+{
+  "id": "lh-media",
+  "name": "LEAD HUNTER · media queue",
+  "active": false,
+  "nodes": [
+    {
+      "id": "a67b04cd5c491d4d2a8cd5ab1600abc4",
+      "name": "Worker",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lh-media",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "lh-media",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "lh-webhook",
+          "name": "LEAD HUNTER local webhook"
+        }
+      }
+    },
+    {
+      "id": "64cff1319d2fd2cbb7a1e84ccecf22c1",
+      "name": "Action",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT media_action($1::jsonb) AS result;",
+        "options": {
+          "queryReplacement": "={{ [JSON.stringify($json.body)] }}"
+        }
+      },
+      "position": [
+        240,
+        0
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "lh-postgres",
+          "name": "LEAD HUNTER PostgreSQL"
+        }
+      }
+    },
+    {
+      "id": "9061383b8e228ef3ac36ddc06d128d0f",
+      "name": "Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.result }}",
+        "options": {}
+      },
+      "position": [
+        480,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Worker": {
+      "main": [
+        [
+          {
+            "node": "Action",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Action": {
+      "main": [
+        [
+          {
+            "node": "Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "all",
+    "executionTimeout": 120
+  },
+  "pinData": {},
+  "versionId": "e2199c99c520fcc74cff9078f1141c49"
+}

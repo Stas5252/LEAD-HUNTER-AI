@@ -1,0 +1,14 @@
+*
+!requirements.txt
+!scripts/
+!scripts/**
+!config/
+!config/**
+
+!migrations/
+!migrations/**
+!.env.example
+!workflows/
+!workflows/**
+!deploy/
+!deploy/**

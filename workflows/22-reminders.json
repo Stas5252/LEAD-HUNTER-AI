@@ -1,0 +1,71 @@
+{
+  "id": "lh-reminders",
+  "name": "LEAD HUNTER · CRM reminders",
+  "active": false,
+  "nodes": [
+    {
+      "id": "7414f932705ebc9f73bd6e4e9a05d945",
+      "name": "Every five minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 5
+            }
+          ]
+        }
+      },
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "54df112e693720affaffb390544c42a2",
+      "name": "Queue reminders",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT queue_reminders() AS result;",
+        "options": {
+          "queryReplacement": ""
+        }
+      },
+      "position": [
+        240,
+        0
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "lh-postgres",
+          "name": "LEAD HUNTER PostgreSQL"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Every five minutes": {
+      "main": [
+        [
+          {
+            "node": "Queue reminders",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "all",
+    "executionTimeout": 120
+  },
+  "pinData": {},
+  "versionId": "491f6350ccfe4cec3349c04498584873"
+}

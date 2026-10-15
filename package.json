@@ -1,0 +1,11 @@
+{
+  "name": "lead-hunter-ai",
+  "version": "0.1.0",
+  "private": true,
+  "description": "n8n + PostgreSQL lead qualification and Telegram control",
+  "scripts": {
+    "test": "node --test tests/*.test.js",
+    "build:workflows": "node scripts/build-workflows.js"
+  },
+  "engines": {"node": ">=24"}
+}

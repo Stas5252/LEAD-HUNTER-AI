@@ -1,0 +1,125 @@
+name: lead-hunter-ai
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: '3'
+services:
+  postgres:
+    image: postgres:17.11-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run python3 scripts/setup.py}
+      POSTGRES_DB: postgres
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?Run setup}
+      N8N_DB_PASSWORD: ${N8N_DB_PASSWORD:?Run setup}
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ./scripts/init-db.sh:/docker-entrypoint-initdb.d/01-lead-hunter.sh:ro
+    healthcheck:
+      test: [CMD-SHELL, 'PGPASSWORD="$$APP_DB_PASSWORD" psql -h 127.0.0.1 -U lead_hunter -d lead_hunter -Atc "SELECT 1" >/dev/null']
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    logging: *logging
+  n8n:
+    image: n8nio/n8n:2.43.6@sha256:dd580fe1ab6e99e85bc66f2acf8bc8c5e9409fbe61b2e2803c5024403ef52833
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - '127.0.0.1:${N8N_PORT:-5678}:5678'
+    environment:
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: postgres
+      DB_POSTGRESDB_PORT: '5432'
+      DB_POSTGRESDB_DATABASE: n8n
+      DB_POSTGRESDB_USER: n8n
+      DB_POSTGRESDB_PASSWORD: ${N8N_DB_PASSWORD:?Run setup}
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY:?Run setup}
+      N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS: 'true'
+      N8N_DIAGNOSTICS_ENABLED: 'false'
+      N8N_VERSION_NOTIFICATIONS_ENABLED: 'false'
+      N8N_PERSONALIZATION_ENABLED: 'false'
+      N8N_COMMUNITY_PACKAGES_ENABLED: 'false'
+      N8N_SECURE_COOKIE: 'false'
+      N8N_BLOCK_ENV_ACCESS_IN_NODE: 'true'
+      NODE_FUNCTION_ALLOW_BUILTIN: crypto,url
+      GENERIC_TIMEZONE: ${GENERIC_TIMEZONE:-Europe/Saratov}
+      TZ: ${GENERIC_TIMEZONE:-Europe/Saratov}
+      WEBHOOK_URL: ${WEBHOOK_URL:-http://localhost:5678/}
+      EXECUTIONS_DATA_PRUNE: 'true'
+      EXECUTIONS_DATA_MAX_AGE: '168'
+      EXECUTIONS_DATA_SAVE_ON_SUCCESS: none
+      EXECUTIONS_DATA_SAVE_ON_ERROR: all
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./.local:/opt/lead-hunter:ro
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:5678/healthz/readiness').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 60
+      start_period: 30s
+    logging: *logging
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    image: lead-hunter-worker:local
+    profiles: [workers]
+    restart: unless-stopped
+    init: true
+    depends_on:
+      n8n:
+        condition: service_healthy
+    environment: &worker-env
+      LH_N8N_URL: http://n8n:5678
+      TELEGRAM_WEBHOOK_SECRET: ${TELEGRAM_WEBHOOK_SECRET:?Run setup}
+      MEDIA_ROOT: /data/media
+      THREADS_ACCESS_TOKEN: ${THREADS_ACCESS_TOKEN:-}
+      THREADS_REVIEW_CONFIRMED: ${THREADS_REVIEW_CONFIRMED:-false}
+      POSTIZ_API_URL: ${POSTIZ_API_URL:-}
+      POSTIZ_API_KEY: ${POSTIZ_API_KEY:-}
+      NO_PROXY: n8n,postgres,localhost,127.0.0.1
+      no_proxy: n8n,postgres,localhost,127.0.0.1
+    volumes:
+      - media_data:/data/media
+    mem_limit: 768m
+    cpus: 1.0
+    pids_limit: 128
+    security_opt: [no-new-privileges:true]
+    healthcheck:
+      test: [CMD, python3, -c, "import pathlib,time; p=pathlib.Path('/tmp/lh-worker-heartbeat'); exit(0 if p.exists() and time.time()-p.stat().st_mtime<300 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    logging: *logging
+  telegram:
+    image: lead-hunter-worker:local
+    profiles: [telegram]
+    restart: unless-stopped
+    init: true
+    command: [python3, scripts/telegram_transport.py]
+    depends_on:
+      n8n:
+        condition: service_healthy
+    environment:
+      <<: *worker-env
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_ADMIN_ID: ${TELEGRAM_ADMIN_ID:-}
+    volumes:
+      - media_data:/data/media:ro
+    mem_limit: 192m
+    cpus: 0.5
+    pids_limit: 64
+    security_opt: [no-new-privileges:true]
+    logging: *logging
+
+volumes:
+  pg_data:
+  n8n_data:
+  media_data:

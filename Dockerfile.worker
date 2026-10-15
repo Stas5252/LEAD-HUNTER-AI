@@ -1,0 +1,23 @@
+# syntax=docker/dockerfile:1.7
+FROM python:3.12.14-slim-bookworm@sha256:392307d22300de8b5986851a12d9176dfc0fc073e65bf6523ebd7dcbeb23564e
+RUN --mount=type=secret,id=proxy_ca,required=false \
+    set -eu; \
+    if [ -f /run/secrets/proxy_ca ]; then cat /etc/ssl/certs/ca-certificates.crt /run/secrets/proxy_ca > /tmp/build-ca.pem; export SSL_CERT_FILE=/tmp/build-ca.pem REQUESTS_CA_BUNDLE=/tmp/build-ca.pem; fi; \
+    apt-get update -qq && apt-get install -y --no-install-recommends ffmpeg fonts-dejavu-core ca-certificates \
+    && rm -rf /var/lib/apt/lists/* /tmp/build-ca.pem
+WORKDIR /app
+COPY requirements.txt ./
+RUN --mount=type=secret,id=proxy_ca,required=false \
+    set -eu; \
+    if [ -f /run/secrets/proxy_ca ]; then cat /etc/ssl/certs/ca-certificates.crt /run/secrets/proxy_ca > /tmp/build-ca.pem; export SSL_CERT_FILE=/tmp/build-ca.pem PIP_CERT=/tmp/build-ca.pem; fi; \
+    pip install --no-cache-dir -r requirements.txt && rm -f /tmp/build-ca.pem
+COPY scripts ./scripts
+COPY config ./config
+COPY migrations ./migrations
+COPY .env.example ./
+COPY scripts/worker-entrypoint.sh /usr/local/bin/lh-worker
+RUN useradd --uid 1000 --create-home worker && mkdir -p /data/media && chown worker:worker /data/media && chmod 755 /usr/local/bin/lh-worker
+USER worker
+ENV PYTHONUNBUFFERED=1 MEDIA_ROOT=/data/media
+ENTRYPOINT ["lh-worker"]
+CMD ["python3","scripts/connector_worker.py"]

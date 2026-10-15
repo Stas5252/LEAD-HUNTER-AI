@@ -1,0 +1,62 @@
+{
+  "name": "Станислав Бутов",
+  "website": "https://stanislavweb.ru",
+  "geography": "Вся Россия",
+  "niches": "Все ниши; сбор ограничен по партиям и разрешениям источников",
+  "budget_mode": "FREE",
+  "instagram": "stanislav.web",
+  "threads": "stanislav.web",
+  "services": [
+    {
+      "id": "web",
+      "name": "Сайты, лендинги, интернет-магазины",
+      "min_price": null,
+      "cases": []
+    },
+    {
+      "id": "marketing",
+      "name": "Полный маркетинг: Яндекс Директ, таргет VK, Авито, продвижение на картах",
+      "min_price": null,
+      "cases": []
+    },
+    {
+      "id": "crm",
+      "name": "Внедрение CRM-систем",
+      "min_price": null,
+      "cases": []
+    },
+    {
+      "id": "calls",
+      "name": "Лидогенерация на звонках",
+      "min_price": null,
+      "cases": []
+    },
+    {
+      "id": "sales",
+      "name": "Полная работа с продажами, построение отдела продаж и обучение",
+      "min_price": null,
+      "cases": []
+    },
+    {
+      "id": "ai",
+      "name": "ИИ-фильмы, мультфильмы, рекламные креативы, фото, коммерческое видео",
+      "min_price": null,
+      "cases": []
+    },
+    {
+      "id": "automation",
+      "name": "Боты и автоматизация",
+      "min_price": null,
+      "cases": []
+    }
+  ],
+  "contacts": {
+    "telegram": "https://t.me/Butov52",
+    "phone": "+79677688817",
+    "vk": "https://vk.ru/molodo_1",
+    "whatsapp": null
+  },
+  "rights_confirmed": false,
+  "telegram_admin_id": "761405171",
+  "deployment_preference": "Free test server; no owner PC"
+}

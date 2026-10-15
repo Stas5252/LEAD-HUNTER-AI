@@ -1,0 +1,125 @@
+{
+  "id": "lh-transport",
+  "name": "LEAD HUNTER · Notification outbox",
+  "active": false,
+  "nodes": [
+    {
+      "id": "93de0a4a5c34def49210bf5fcb3a4565",
+      "name": "Transport request",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lh-transport",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "17fb840c4d2c05f8d72389aa1ab62ad6",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "lh-webhook",
+          "name": "LEAD HUNTER local webhook"
+        }
+      }
+    },
+    {
+      "id": "f802e1ffc47a871e277ecd232236e83d",
+      "name": "Transport state",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT transport_action($1::jsonb) AS result;",
+        "options": {
+          "queryReplacement": "={{ [JSON.stringify($json.body)] }}"
+        }
+      },
+      "position": [
+        240,
+        0
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "lh-postgres",
+          "name": "LEAD HUNTER PostgreSQL"
+        }
+      }
+    },
+    {
+      "id": "eba3ab1bc09c3c3c3508b88a52d21361",
+      "name": "Render notifications",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "parameters": {
+        "jsCode": "const cards = (()=>{const module={exports:{}};\n'use strict';\nconst escapeHtml = text => String(text ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\"/g, '&quot;');\nfunction renderCard(lead) {\n  const e = x => escapeHtml(String(x ?? '').slice(0, 500));\n  const text = [\n    lead.is_demo ? '🧪 <b>DEMO: вымышленный пример</b>' : '📋 <b>Лид — требуется проверка владельца</b>',\n    `Компания: <b>${e(lead.company_name)}</b>`,\n    `Город: ${e(lead.city)} · Ниша: ${e(lead.niche)}`,\n    `Оценка: ${e(lead.score_0_100)}/100 · ${e(lead.classification)} · ${e(lead.scoring_method)}`,\n    `Статус: ${e(lead.status)} · Сайт: ${e(lead.website_status)}`,\n    `Основание: ${e(lead.proof_quote)}`,\n    `Почему: ${e(lead.why_relevant)}`,\n    `Оффер: ${e(lead.offer_type)}`,\n    `Контакт: ${e(lead.public_contact || 'Не указан')}`,\n    `Черновик (v${e(lead.draft_version || 1)}): ${e(lead.draft_message)}`,\n    `ID: <code>${e(lead.lead_id || 'после сохранения')}</code>`,\n    'КП не отправлено. Одобрение относится к ручной отправке.',\n  ].join('\\n');\n  const rows = [];\n  if (lead.lead_id) rows.push([\n    { text: 'Одобрить', callback_data: `a:${lead.lead_id}:${lead.draft_version || 1}` },\n    { text: 'Не беспокоить', callback_data: `r:${lead.lead_id}` },\n  ], [{ text: 'Изменить черновик', callback_data: `d:${lead.lead_id}` }]);\n  if (lead.source_url) rows.push([{ text: 'Открыть источник', url: lead.source_url }]);\n  return { text, parse_mode: 'HTML', disable_web_page_preview: true, reply_markup: { inline_keyboard: rows } };\n}\nmodule.exports = { renderCard, escapeHtml };\n\nreturn module.exports;})();\n\nconst r=$input.first().json.result;\nif(r.jobs)r.jobs=r.jobs.map(j=>({id:j.id,message:{...(['message','media_preview','visitor_reply'].includes(j.payload.type)?j.payload.data:cards.renderCard(j.payload)),chat_id:j.chat_id}}));\nreturn [{json:{result:r}}];"
+      },
+      "position": [
+        480,
+        0
+      ]
+    },
+    {
+      "id": "efe80fcbfe7591c791de25903ad2ea9b",
+      "name": "Transport response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.result }}",
+        "options": {}
+      },
+      "position": [
+        720,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Transport request": {
+      "main": [
+        [
+          {
+            "node": "Transport state",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transport state": {
+      "main": [
+        [
+          {
+            "node": "Render notifications",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Render notifications": {
+      "main": [
+        [
+          {
+            "node": "Transport response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "all",
+    "executionTimeout": 120
+  },
+  "pinData": {},
+  "versionId": "17fb840c4d2c05f8d72389aa1ab62ad6"
+}

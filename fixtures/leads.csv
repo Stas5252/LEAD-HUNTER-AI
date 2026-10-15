@@ -1,0 +1,4 @@
+external_id,company_name,source,source_type,source_url,city,niche,text,published_at,is_demo
+demo-furniture-1,DEMO: мебельный салон N (вымышленный),demo_fixture,maps_demo,https://example.invalid/demo/furniture-1,Самара,мебель,Ищем разработчика: нужен интернет-магазин с каталогом мебели. Есть фото и список товаров.,2026-10-15T06:00:00Z,true
+demo-cafe-2,DEMO: кафе N (вымышленное),demo_fixture,maps_demo,https://example.invalid/demo/cafe-2,Казань,ресторан,Нужен сайт с меню и заказом доставки для нашего кафе.,2026-10-15T07:00:00Z,true
+demo-developer-3,DEMO: исполнитель N (вымышленный),demo_fixture,maps_demo,https://example.invalid/demo/developer-3,Москва,разработка,Делаю сайты и ботов. Заказывайте у меня!,,true

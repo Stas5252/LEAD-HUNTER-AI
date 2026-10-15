@@ -1,0 +1,125 @@
+{
+  "id": "lh-form",
+  "name": "LEAD HUNTER · Signed website form",
+  "active": false,
+  "nodes": [
+    {
+      "id": "2e0e960ab3204127b1dce399c9984c81",
+      "name": "Form",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lh-form",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "lh-form",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "lh-form-key",
+          "name": "LEAD HUNTER server form key"
+        }
+      }
+    },
+    {
+      "id": "bf26c7de5e11a35bfde9aca883723353",
+      "name": "Validate form",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "parameters": {
+        "jsCode": "const forms = (()=>{const module={exports:{}};\n'use strict';\nconst {URL}=require('url');\nfunction sorted(value){if(Array.isArray(value))return value.map(sorted);if(value&&typeof value==='object')return Object.fromEntries(Object.keys(value).sort().map(k=>[k,sorted(value[k])]));return value;}\nfunction signingInput(body){return JSON.stringify(sorted(body));}\nfunction parseForm(body,signature,{now=Math.floor(Date.now()/1000)}={}){\n if(!body||typeof body!=='object'||Array.isArray(body))throw Error('Invalid form');\n if(body.consent!==true)throw Error('Explicit consent required');\n if(!Number.isSafeInteger(body.timestamp)||Math.abs(now-body.timestamp)>300)throw Error('Invalid timestamp');\n if(!/^[a-zA-Z0-9_-]{12,100}$/.test(body.nonce||''))throw Error('Invalid nonce');\n if(!/^[a-f0-9]{64}$/.test(signature||''))throw Error('Invalid signature');\n if(typeof body.contact!=='string'||body.contact.length<3||body.contact.length>300||typeof body.message!=='string'||body.message.length<3||body.message.length>4000)throw Error('Invalid contact/message');\n const origin=new URL(body.source_url);if(origin.origin!=='https://stanislavweb.ru'||origin.username||origin.password)throw Error('Invalid form origin');\n const input=signingInput(body);if(input.length>8000)throw Error('Form too large');\n return {payload:body,signature,signing_input:input};\n}\nmodule.exports={signingInput,parseForm};\n\nreturn module.exports;})();\nconst r=$input.first().json;return [{json:forms.parseForm(r.body,r.headers['x-lh-signature'])}];"
+      },
+      "position": [
+        240,
+        0
+      ]
+    },
+    {
+      "id": "67588d36e253b106b47533f34f18ae10",
+      "name": "Accept signed form",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT receive_form($1::jsonb) AS result;",
+        "options": {
+          "queryReplacement": "={{ [JSON.stringify($json)] }}"
+        }
+      },
+      "position": [
+        480,
+        0
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "lh-postgres",
+          "name": "LEAD HUNTER PostgreSQL"
+        }
+      }
+    },
+    {
+      "id": "9061383b8e228ef3ac36ddc06d128d0f",
+      "name": "Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.result }}",
+        "options": {}
+      },
+      "position": [
+        720,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Form": {
+      "main": [
+        [
+          {
+            "node": "Validate form",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate form": {
+      "main": [
+        [
+          {
+            "node": "Accept signed form",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Accept signed form": {
+      "main": [
+        [
+          {
+            "node": "Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "all",
+    "executionTimeout": 120
+  },
+  "pinData": {},
+  "versionId": "49361f7a24c0de7d7b6e36a6dfb74748"
+}
